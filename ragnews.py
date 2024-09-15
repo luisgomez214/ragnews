@@ -113,41 +113,43 @@ def _catch_errors(func):
 # rag
 ################################################################################
 
-def rag(text, db):
+def rag(query_text, database):
     '''
-    This function uses retrieval augmented generation (RAG) to generate an LLM response to the input text.
-    The db argument should be an instance of the `ArticleDB` class that contains the relevant documents to use.
+    Generate an LLM response based on the input text using retrieval augmented generation (RAG).
+    The `database` parameter should be an instance of the `ArticleDB` class with the relevant articles.
+
+    Parameters:
+    - query_text: The input query for which a response is generated.
+    - database: An instance of `ArticleDB` to search for related articles.
+
+    Returns:
+    - An LLM-generated response based on the query and related articles.
     '''
-    
-    # Step 1: Extract keywords from the text
-    keywords = extract_keywords(text)
-    
-    # Step 2: Use those keywords to search the article database
-    related_articles = db.find_articles(keywords)
-    
-    # Step 3: Construct a user prompt
-    # Concatenate the articles' content to create a new prompt
-    articles_content = ""
-    for article in related_articles:
-        title = article.get('title', 'No title')
-        content = article.get('content', 'No content')
-        articles_content += f"Title: {title}\nContent: {content}\n\n"
-    
-    # Build the final prompt for the LLM by combining the original text and articles
-    new_prompt = (
-        f"You are an AI assistant. Based on the following articles and the user query, "
-        f"please generate an accurate and informative response.\n\n"
-        f"--- Articles ---\n"
-        f"{articles_content}"
-        f"--- User Query ---\n"
-        f"{text}\n\n"
-        f"Generate a detailed response based on the query and the provided articles."
+
+    # Extract important keywords from the input text
+    keywords = extract_keywords(query_text)
+
+    # Retrieve related articles from the database using the extracted keywords
+    articles = database.find_articles(keywords)
+
+    # Aggregate content from the related articles
+    combined_articles_content = ''.join(
+        f"Title: {article.get('title', 'No title')}\nContent: {article.get('content', 'No content')}\n\n"
+        for article in articles
     )
-    
-    # Step 4: Pass the prompt to the LLM
-    llm_response = run_llm(system='', user=new_prompt)
-    
-    return llm_response
+
+    # Formulate a comprehensive prompt for the LLM
+    prompt = (
+        f"As an AI assistant, use the following articles and user query to generate an informative response.\n\n"
+        f"--- Articles ---\n{combined_articles_content}"
+        f"--- User Query ---\n{query_text}\n\n"
+        f"Provide a detailed and accurate response."
+    )
+
+    # Get the LLM's response
+    response = run_llm(system='', user=prompt)
+
+    return response
 
 
 
@@ -223,35 +225,43 @@ class ArticleDB:
         except sqlite3.OperationalError:
             self.logger.debug('CREATE TABLE failed')
 
-
-    def find_articles(self, query, limit=10, timebias_alpha=1):
-    
+    def find_articles(self, search_query, max_results=10, time_bias_alpha=1):
         '''
-        Return a list of articles in the database that match the specified query.
+        Find articles in the database that match the given search query.
+
+        Parameters:
+        - search_query: The query to search for in the articles.
+        - max_results: The maximum number of results to return (default is 10).
+        - time_bias_alpha: A parameter for time bias in ranking (default is 1).
+
+        Returns:
+        - A list of articles matching the search query.
         '''
-    
-        if isinstance(query, str):
-            query_words = query.split()
-            query = ' OR '.join(f'"{word}"' for word in query_words)  # Properly format keywords for FTS5
 
-        query = query.replace("'", "''")
-        print('query:', query)
+        # Format the search query for full-text search
+        if isinstance(search_query, str):
+            formatted_query = ' OR '.join(f'"{word}"' for word in search_query.split())
+        else:
+            formatted_query = search_query
 
-        sql = '''
+        formatted_query = formatted_query.replace("'", "''")
+        logging.debug(f'Search Query: {formatted_query}')
+
+        sql_query = '''
             SELECT rowid, rank, title, publish_date, hostname, url, en_summary, text
             FROM articles
             WHERE articles MATCH ?
             ORDER BY rank DESC
             LIMIT ?
-         '''
+        '''
 
-        # Execute the query
-        result = self.db.execute(sql, (query, limit)).fetchall()
+        # Execute the query and fetch results
+        result_set = self.db.execute(sql_query, (formatted_query, max_results)).fetchall()
 
-        # Convert the result rows to dictionaries
-        articles = [dict(row) for row in result]
+        # Convert result rows to dictionaries
+        articles_list = [dict(row) for row in result_set]
 
-        return articles
+        return articles_list
 
     @_catch_errors
     def add_url(self, url, recursive_depth=0, allow_dupes=False):
