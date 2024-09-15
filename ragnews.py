@@ -131,7 +131,7 @@ def rag(text, db):
     for article in related_articles:
         title = article.get('title', 'No title')
         content = article.get('content', 'No content')
-        articles_content += f"Title: {article['title']}\nContent: {article['content']}\n\n"
+        articles_content += f"Title: {title}\nContent: {content}\n\n"
     
     # Build the final prompt for the LLM by combining the original text and articles
     new_prompt = (
@@ -148,6 +148,7 @@ def rag(text, db):
     llm_response = run_llm(system='', user=new_prompt)
     
     return llm_response
+
 
 
 class ArticleDB:
@@ -367,12 +368,13 @@ class ArticleDB:
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Interactive QA with news articles.')
     parser.add_argument('--loglevel', default='warning')
     parser.add_argument('--db', default='ragnews.db')
     parser.add_argument('--recursive_depth', default=0, type=int)
-    parser.add_argument('--add_url', help='If this parameter is added, then the program will not provide an interactive QA session with the database.  Instead, the provided url will be downloaded and added to the database.')
-    parser.add_argument('--test_find_articles', action='store_true', help='Run the find_articles test with a sample query.')
+    parser.add_argument('--add_url', help='Add a URL to the database')
+    parser.add_argument('--test_find_articles', action='store_true', help='Test finding articles')
+    parser.add_argument('--query', help='Query for interactive QA')
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -385,18 +387,15 @@ if __name__ == '__main__':
 
     if args.add_url:
         db.add_url(args.add_url, recursive_depth=args.recursive_depth, allow_dupes=True)
-
     elif args.test_find_articles:
-        # Add sample articles for testing
         db.add_url(ArticleDB._TESTURLS[0])
         db.add_url(ArticleDB._TESTURLS[1])
-
-        # Test find_articles with a sample query
-        query = "Economía"
-        results = db.find_articles(query)
+        results = db.find_articles("Economía")
         for result in results:
             print(f"Title: {result['title']}")
-
+    elif args.query:
+        output = rag(args.query, db)
+        print(output)
     else:
         import readline
         while True:
@@ -404,5 +403,7 @@ if __name__ == '__main__':
             if len(text.strip()) > 0:
                 output = rag(text, db)
                 print(output)
+
+
 
 
