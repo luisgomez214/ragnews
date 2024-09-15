@@ -81,6 +81,9 @@ def extract_keywords(text, seed=None):
     # To make the test cases above pass,
     # you'll have to modify them to be what the output of your prompt provides.
 
+    system = 'Extract the most important keywords from the input text. The keywords should represent the main entities, events, and subjects discussed. Output the keywords as a comma-separated list.'
+    keywords = run_llm(system, text, seed=seed)
+    return keywords
 
 ################################################################################
 # helper functions
@@ -211,27 +214,34 @@ class ArticleDB:
         except sqlite3.OperationalError:
             self.logger.debug('CREATE TABLE failed')
 
+
     def find_articles(self, query, limit=10, timebias_alpha=1):
+    
         '''
+    
         Return a list of articles in the database that match the specified query.
 
         Lowering the value of the timebias_alpha parameter will result in the time becoming more influential.
         The final ranking is computed by the FTS5 rank * timebias_alpha / (days since article publication + timebias_alpha).
         '''
-        
-        # FIXME:
-        # Implement this function.
-        # You do not need to concern yourself with the timebias_alpha parameter.
-        # (Although I encourage you to try!)
-        #
-        # HINT:
-        # The only thing my solution does is pass a SELECT statement to the sqlite3 database.
-        # The SELECT statement will need to use sqlite3's FTS5 syntax for full text search.
-        # If you need to review how to coordinate sqlite3 and python,
-        # there is an example in the __len__ method below.
-        # The details of the SELECT statement will be different
-        # (because the functions collect different information)
-        # but the outline of the python code is the same.
+        cursor = self.db.cursor()
+
+        # SQL query for full-text search and ordering by match relevance
+        sql = '''
+        SELECT title FROM articles
+        WHERE articles MATCH 'trump Harris debate'
+        ORDER BY rank LIMIT 10;
+        '''
+
+        cursor.execute(sql, (query, limit))
+        rows = cursor.fetchall()
+
+        # Print the top results ordered by relevance
+        for row in rows:
+            print(f"row={row}")
+
+        return rows
+
 
     @_catch_errors
     def add_url(self, url, recursive_depth=0, allow_dupes=False):
@@ -353,18 +363,30 @@ if __name__ == '__main__':
     parser.add_argument('--db', default='ragnews.db')
     parser.add_argument('--recursive_depth', default=0, type=int)
     parser.add_argument('--add_url', help='If this parameter is added, then the program will not provide an interactive QA session with the database.  Instead, the provided url will be downloaded and added to the database.')
+    parser.add_argument('--test_find_articles', action='store_true', help='Run the find_articles test with a sample query.')
     args = parser.parse_args()
 
     logging.basicConfig(
         format='%(asctime)s %(levelname)-8s %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         level=args.loglevel.upper(),
-        )
+    )
 
     db = ArticleDB(args.db)
 
     if args.add_url:
         db.add_url(args.add_url, recursive_depth=args.recursive_depth, allow_dupes=True)
+
+    elif args.test_find_articles:
+        # Add sample articles for testing
+        db.add_url(ArticleDB._TESTURLS[0])
+        db.add_url(ArticleDB._TESTURLS[1])
+
+        # Test find_articles with a sample query
+        query = "Economía"
+        results = db.find_articles(query)
+        for result in results:
+            print(f"Title: {result['title']}")
 
     else:
         import readline
@@ -373,3 +395,5 @@ if __name__ == '__main__':
             if len(text.strip()) > 0:
                 output = rag(text, db)
                 print(output)
+
+
