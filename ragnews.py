@@ -113,33 +113,41 @@ def _catch_errors(func):
 # rag
 ################################################################################
 
-
 def rag(text, db):
     '''
     This function uses retrieval augmented generation (RAG) to generate an LLM response to the input text.
     The db argument should be an instance of the `ArticleDB` class that contains the relevant documents to use.
-
-    NOTE:
-    There are no test cases because:
-    1. the answers are non-deterministic (both because of the LLM and the database), and
-    2. evaluating the quality of answers automatically is non-trivial.
-
     '''
-
-    # FIXME:
-    # Implement this function.
-    # Recall that your RAG system should:
-    # 1. Extract keywords from the text.
-    # 2. Use those keywords to find articles related to the text.
-    # 3. Construct a new user prompt that includes all of the articles and the original text.
-    # 4. Pass the new prompt to the LLM and return the result.
-    #
-    # HINT:
-    # You will also have to write your own system prompt to use with the LLM.
-    # I needed a fairly long system prompt (about 15 lines) in order to get good results.
-    # You can start with a basic system prompt right away just to check if things are working,
-    # but don't spend a lot of time on the system prompt until you're sure everything else is working.
-    # Then, you can iteratively add more commands into the system prompt to correct "bad" behavior you see in your program's output.
+    
+    # Step 1: Extract keywords from the text
+    keywords = extract_keywords(text)
+    
+    # Step 2: Use those keywords to search the article database
+    related_articles = db.find_articles(keywords)
+    
+    # Step 3: Construct a user prompt
+    # Concatenate the articles' content to create a new prompt
+    articles_content = ""
+    for article in related_articles:
+        title = article.get('title', 'No title')
+        content = article.get('content', 'No content')
+        articles_content += f"Title: {article['title']}\nContent: {article['content']}\n\n"
+    
+    # Build the final prompt for the LLM by combining the original text and articles
+    new_prompt = (
+        f"You are an AI assistant. Based on the following articles and the user query, "
+        f"please generate an accurate and informative response.\n\n"
+        f"--- Articles ---\n"
+        f"{articles_content}"
+        f"--- User Query ---\n"
+        f"{text}\n\n"
+        f"Generate a detailed response based on the query and the provided articles."
+    )
+    
+    # Step 4: Pass the prompt to the LLM
+    llm_response = run_llm(system='', user=new_prompt)
+    
+    return llm_response
 
 
 class ArticleDB:
@@ -218,30 +226,31 @@ class ArticleDB:
     def find_articles(self, query, limit=10, timebias_alpha=1):
     
         '''
-    
         Return a list of articles in the database that match the specified query.
-
-        Lowering the value of the timebias_alpha parameter will result in the time becoming more influential.
-        The final ranking is computed by the FTS5 rank * timebias_alpha / (days since article publication + timebias_alpha).
         '''
-        cursor = self.db.cursor()
+    
+        if isinstance(query, str):
+            query_words = query.split()
+            query = ' OR '.join(f'"{word}"' for word in query_words)  # Properly format keywords for FTS5
 
-        # SQL query for full-text search and ordering by match relevance
+        query = query.replace("'", "''")
+        print('query:', query)
+
         sql = '''
-        SELECT title FROM articles
-        WHERE articles MATCH 'trump Harris debate'
-        ORDER BY rank LIMIT 10;
-        '''
+            SELECT rowid, rank, title, publish_date, hostname, url, en_summary, text
+            FROM articles
+            WHERE articles MATCH ?
+            ORDER BY rank DESC
+            LIMIT ?
+         '''
 
-        cursor.execute(sql, (query, limit))
-        rows = cursor.fetchall()
+        # Execute the query
+        result = self.db.execute(sql, (query, limit)).fetchall()
 
-        # Print the top results ordered by relevance
-        for row in rows:
-            print(f"row={row}")
+        # Convert the result rows to dictionaries
+        articles = [dict(row) for row in result]
 
-        return rows
-
+        return articles
 
     @_catch_errors
     def add_url(self, url, recursive_depth=0, allow_dupes=False):
