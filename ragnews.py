@@ -1,7 +1,7 @@
 #!/bin/python3
 
 '''
-Run an interactive QA session with the news articles using the Groq LLM API and retrieval augmented generation (RAG).
+Run an interactive QA session with news articles using the Groq LLM API and retrieval augmented generation (RAG).
 
 New articles can be added to the database with the --add_url parameter,
 and the path to the database can be changed with the --db parameter.
