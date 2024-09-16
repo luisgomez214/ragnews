@@ -80,11 +80,26 @@ def extract_keywords(text, seed=None):
     # You probably certainly won't because you probably won't come up with the exact same prompt as me.
     # To make the test cases above pass,
     # you'll have to modify them to be what the output of your prompt provides.
+    system = '''
+    Extract the most important keywords from the input text. Focus on key topics, people, entities, and policies without any unnecessary text.
 
-    system = 'Extract the most important keywords from the input text. The keywords should represent the main entities, events, and subjects discussed. Output the keywords as a comma-separated list.'
-    keywords = run_llm(system, text, seed=seed)
-    return keywords
+    1. Only return the keywords as a single string, separated by spaces.
+    2. Do not include any extra text like "Here are the keywords".
+    3. Only extract the key terms relevant to the query, without stopwords.
 
+    Example:
+
+    Input: 'Who is the current democratic presidential nominee?'
+    Output: 'Joe candidate nominee presidential Democrat election primary TBD voting politics'
+
+    Input: 'What is the policy position of Trump related to illegal Mexican immigrants?'
+    Output: 'Trump Mexican immigrants policy position illegal border control deportation walls'
+
+    Now, extract the keywords from this input:
+    I repeat only return keywords nothing in addition to it
+    '''
+
+    return run_llm(system, text, seed=seed)
 ################################################################################
 # helper functions
 ################################################################################
@@ -113,43 +128,41 @@ def _catch_errors(func):
 # rag
 ################################################################################
 
-def rag(query_text, database):
-    '''
-    Generate an LLM response based on the input text using retrieval augmented generation (RAG).
-    The `database` parameter should be an instance of the `ArticleDB` class with the relevant articles.
+def rag(text, db):
+    """
+    This function uses Retrieval Augmented Generation (RAG) to create an LLM response for the input text.
+    The `db` argument should be an instance of the `ArticleDB` class containing relevant documents.
 
-    Parameters:
-    - query_text: The input query for which a response is generated.
-    - database: An instance of `ArticleDB` to search for related articles.
+    Steps:
+    1. Extract keywords from the input text.
+    2. Retrieve related articles based on those keywords.
+    3. Construct a new prompt using the query and the article summaries.
+    4. Pass the prompt to the LLM and return the response.
+    """
 
-    Returns:
-    - An LLM-generated response based on the query and related articles.
-    '''
+    # Step 1: Extract keywords from the input text
+    keywords = extract_keywords(text)
 
-    # Extract important keywords from the input text
-    keywords = extract_keywords(query_text)
+    # Step 2: Use the extracted keywords to find relevant articles in the database
+    related_articles = db.find_articles(keywords)
 
-    # Retrieve related articles from the database using the extracted keywords
-    articles = database.find_articles(keywords)
+    # Step 3: Compile summaries from the relevant articles
+    summaries = "\n\n".join(article['en_summary'] for article in related_articles)
 
-    # Aggregate content from the related articles
-    combined_articles_content = ''.join(
-        f"Title: {article.get('title', 'No title')}\nContent: {article.get('content', 'No content')}\n\n"
-        for article in articles
-    )
-
-    # Formulate a comprehensive prompt for the LLM
+    # Create the LLM prompt by incorporating the user query and the relevant article summaries
     prompt = (
-        f"As an AI assistant, use the following articles and user query to generate an informative response.\n\n"
-        f"--- Articles ---\n{combined_articles_content}"
-        f"--- User Query ---\n{query_text}\n\n"
-        f"Provide a detailed and accurate response."
+        f"You are skilled at responding concisely with information based on article summaries. "
+        f"Below is the user's query followed by summaries of relevant articles. "
+        f"Please answer based only on the information in the summaries. Do not speculate.\n\n"
+        f"User Query: \"{text}\"\n\n"
+        f"Relevant Article Summaries:\n{summaries}"
     )
 
-    # Get the LLM's response
-    response = run_llm(system='', user=prompt)
+    # Step 4: Pass the constructed prompt to the LLM and return the generated response
+    response = run_llm(system=prompt, user=text)
 
     return response
+
 
 
 
@@ -224,6 +237,8 @@ class ArticleDB:
         # then do nothing
         except sqlite3.OperationalError:
             self.logger.debug('CREATE TABLE failed')
+
+
 
     def find_articles(self, search_query, max_results=10, time_bias_alpha=1):
         '''
