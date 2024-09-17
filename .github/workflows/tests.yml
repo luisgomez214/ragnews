@@ -17,13 +17,14 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     steps:
       - uses: actions/checkout@v2
-      - name: Set up Python ${{matrix.python}}
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v2
         with:
-          python-version: ${{matrix.python}}
-      - name: install dependencies
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
         run: |
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: test declaration
+      - name: Run tests
         run: |
-	  python3 test_ragnews.py 	
+          python3 test_ragnews.py
+
