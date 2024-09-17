@@ -26,4 +26,4 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: test declaration
         run: |
-          python3 ragnews.py --query "Who is the current democratic presidential nominee"
+	  python3 test_ragnews.py 	

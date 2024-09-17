@@ -1,7 +1,7 @@
 #!/bin/python3
 
 '''
-Run an interactive QA session with news articles using the Groq LLM API and retrieval augmented generation (RAG).
+run an interactive QA session with the news articles using the Groq LLM API and retrieval augmented generation (RAG).
 
 New articles can be added to the database with the --add_url parameter,
 and the path to the database can be changed with the --db parameter.
@@ -17,7 +17,6 @@ import groq
 
 from groq import Groq
 import os
-
 
 ################################################################################
 # LLM functions
@@ -60,46 +59,19 @@ def translate_text(text):
 
 
 def extract_keywords(text, seed=None):
-    r'''
-    This is a helper function for RAG.
-    Given an input text,
-    this function extracts the keywords that will be used to perform the search for articles that will be used in RAG.
+    # System prompt that instructs the AI assistant to extract keywords from the provided text
+    system_prompt = '''You are an AI assistant. Your task is to extract keywords from a given piece of text. The goal is to generate a comprehensive list of relevant terms that represent the main ideas, topics, and themes of the text. Along with key ideas, include words that provide additional context and connections to these core concepts. Your output should be a detailed list of keywords, capturing both central and contextually related terms. Include all relevant nouns, verbs, adjectives, and proper nouns, especially those that enhance the understanding of the primary content. There is no need for punctuation or formatting—just a space-separated list of words. Exclude common filler words like "the," "and," "of," or similar non-essential words. Focus on words that convey meaning, ensuring that the list reflects both the primary subjects and related ideas. Include compound concepts like "climate change" as two separate words.
+Only provide a space-separated list of relevant keywords. Avoid adding explanations, comments, punctuation, or any additional text.'''
 
-    >>> extract_keywords('Who is the current democratic presidential nominee?', seed=0)
-    'Joe candidate nominee presidential Democrat election primary TBD voting politics'
-    >>> extract_keywords('What is the policy position of Trump related to illegal Mexican immigrants?', seed=0)
-    'Trump Mexican immigrants policy position illegal border control deportation walls'
+    # Define the user input prompt based on the text provided
+    user_prompt = f"Extract keywords from the following text: {text}"
 
-    Note that the examples above are passing in a seed value for deterministic results.
-    In production, you probably do not want to specify the seed.
-    '''
+    # Use the run_llm function to get the extracted keywords
+    keywords = run_llm(system_prompt, user_prompt, seed=seed)
 
-    # FIXME:
-    # Implement this function.
-    # It's okay if you don't get the exact same keywords as me.
-    # You probably certainly won't because you probably won't come up with the exact same prompt as me.
-    # To make the test cases above pass,
-    # you'll have to modify them to be what the output of your prompt provides.
-    system = '''
-    Extract the most important keywords from the input text. Focus on key topics, people, entities, and policies without any unnecessary text.
+    # Return the keywords as a space-separated string
+    return keywords
 
-    1. Only return the keywords as a single string, separated by spaces.
-    2. Do not include any extra text like "Here are the keywords".
-    3. Only extract the key terms relevant to the query, without stopwords.
-
-    Example:
-
-    Input: 'Who is the current democratic presidential nominee?'
-    Output: 'Joe candidate nominee presidential Democrat election primary TBD voting politics'
-
-    Input: 'What is the policy position of Trump related to illegal Mexican immigrants?'
-    Output: 'Trump Mexican immigrants policy position illegal border control deportation walls'
-
-    Now, extract the keywords from this input:
-    I repeat only return keywords nothing in addition to it
-    '''
-
-    return run_llm(system, text, seed=seed)
 ################################################################################
 # helper functions
 ################################################################################
@@ -144,10 +116,10 @@ def rag(text, db):
     keywords = extract_keywords(text)
 
     # Step 2: Use the extracted keywords to find relevant articles in the database
-    related_articles = db.find_articles(keywords)
+    related_articles = db.find_articles(query = keywords)
 
     # Step 3: Compile summaries from the relevant articles
-    summaries = "\n\n".join(article['en_summary'] for article in related_articles)
+    summary = f"{text}\n\nArticles:\n\n" + '\n\n'.join([f"{article['title']}\n{article['en_summary']}" for article in related_articles])
 
     # Create the LLM prompt by incorporating the user query and the relevant article summaries
     prompt = (
@@ -155,15 +127,13 @@ def rag(text, db):
         f"Below is the user's query followed by summaries of relevant articles. "
         f"Please answer based only on the information in the summaries. Do not speculate.\n\n"
         f"User Query: \"{text}\"\n\n"
-        f"Relevant Article Summaries:\n{summaries}"
+        f"Relevant Article Summaries:\n{summary}"
     )
 
     # Step 4: Pass the constructed prompt to the LLM and return the generated response
-    response = run_llm(system=prompt, user=text)
+    response = run_llm(prompt, summary)
 
     return response
-
-
 
 
 class ArticleDB:
@@ -238,46 +208,34 @@ class ArticleDB:
         except sqlite3.OperationalError:
             self.logger.debug('CREATE TABLE failed')
 
-
-
-    def find_articles(self, search_query, max_results=10, time_bias_alpha=1):
+    def find_articles(self, query, limit=10, timebias_alpha=1):
         '''
-        Find articles in the database that match the given search query.
+        Return a list of articles in the database that match the specified query.
 
-        Parameters:
-        - search_query: The query to search for in the articles.
-        - max_results: The maximum number of results to return (default is 10).
-        - time_bias_alpha: A parameter for time bias in ranking (default is 1).
-
-        Returns:
-        - A list of articles matching the search query.
+        Lowering the value of the timebias_alpha parameter will result in the time becoming more influential.
+        The final ranking is computed by the FTS5 rank * timebias_alpha / (days since article publication + timebias_alpha).
         '''
+        
+        cursor = self.db.cursor()
+        # Create a string for the MATCH operator with all keywords
+        match_string = query
+        sql = f"""
+        SELECT title, text, hostname, url, publish_date, crawl_date, lang, en_translation, en_summary 
+        FROM articles 
+        WHERE articles MATCH ? 
+        ORDER BY bm25(articles) asc 
+        LIMIT ?;
+        """
+        cursor.execute(sql, (match_string, limit))
+        rows = cursor.fetchall()
 
-        # Format the search query for full-text search
-        if isinstance(search_query, str):
-            formatted_query = ' OR '.join(f'"{word}"' for word in search_query.split())
-        else:
-            formatted_query = search_query
+        # Get column names from cursor description
+        columns = [column[0] for column in cursor.description]
+       # Convert rows to list of dictionaries
+        output = [dict(zip(columns, row)) for row in rows]
+        return output
 
-        formatted_query = formatted_query.replace("'", "''")
-        logging.debug(f'Search Query: {formatted_query}')
-
-        sql_query = '''
-            SELECT rowid, rank, title, publish_date, hostname, url, en_summary, text
-            FROM articles
-            WHERE articles MATCH ?
-            ORDER BY rank DESC
-            LIMIT ?
-        '''
-
-        # Execute the query and fetch results
-        result_set = self.db.execute(sql_query, (formatted_query, max_results)).fetchall()
-
-        # Convert result rows to dictionaries
-        articles_list = [dict(row) for row in result_set]
-
-        return articles_list
-
+   
     @_catch_errors
     def add_url(self, url, recursive_depth=0, allow_dupes=False):
         '''
@@ -300,9 +258,6 @@ class ArticleDB:
         3
 
         '''
-        from bs4 import BeautifulSoup
-        import requests
-        import metahtml
         logging.info(f'add_url {url}')
 
         if not allow_dupes:
@@ -393,13 +348,15 @@ class ArticleDB:
 
 if __name__ == '__main__':
     import argparse
+    import logging
+
     parser = argparse.ArgumentParser(description='Interactive QA with news articles.')
     parser.add_argument('--loglevel', default='warning')
     parser.add_argument('--db', default='ragnews.db')
     parser.add_argument('--recursive_depth', default=0, type=int)
     parser.add_argument('--add_url', help='Add a URL to the database')
     parser.add_argument('--test_find_articles', action='store_true', help='Test finding articles')
-    parser.add_argument('--query', help='Query for interactive QA')
+    parser.add_argument('--query', help='Query for interactive QA')  # Ensure this line is present
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -428,7 +385,6 @@ if __name__ == '__main__':
             if len(text.strip()) > 0:
                 output = rag(text, db)
                 print(output)
-
 
 
 
