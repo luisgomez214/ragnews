@@ -1,3 +1,5 @@
+# RAG News ![](https://github.com/luisgomez214/ragnews/workflows/tests/badge.svg)
+
 This repository contains a Question and Answer (Q&A) system designed for answering questions. The system uses a Retrieval-Augmented Generation (RAG) approach, where it retrieves relevant articles from an SQL database and uses Groq’s LLM API to generate responses. The project demonstrates how traditional SQL databases can be used effectively for document retrieval without relying on complex vector databases like Pinecone.
 
 ```
