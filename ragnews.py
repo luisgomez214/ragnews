@@ -210,15 +210,13 @@ class ArticleDB:
 
     def find_articles(self, query, limit=10, timebias_alpha=1):
         '''
-        Return a list of articles in the database that match the specified query.
+         Return a list of articles in the database that match the specified query.
         '''
     
         cursor = self.db.cursor()
     
-        # Ensure the query string is correctly formatted for the MATCH operator
-        match_string = f"{query}"
-    
-        sql = f"""
+        # Use MATCH with a properly formatted query string
+        sql = """
         SELECT title, text, hostname, url, publish_date, crawl_date, lang, en_translation, en_summary 
         FROM articles 
         WHERE articles MATCH ? 
@@ -226,7 +224,7 @@ class ArticleDB:
         LIMIT ?;
         """
     
-        cursor.execute(sql, (match_string, limit))
+        cursor.execute(sql, (query, limit))
         rows = cursor.fetchall()
 
         # Get column names from cursor description
@@ -235,7 +233,6 @@ class ArticleDB:
         # Convert rows to list of dictionaries
         output = [dict(zip(columns, row)) for row in rows]
         return output
-
 
    
     @_catch_errors
