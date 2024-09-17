@@ -211,29 +211,31 @@ class ArticleDB:
     def find_articles(self, query, limit=10, timebias_alpha=1):
         '''
         Return a list of articles in the database that match the specified query.
-
-        Lowering the value of the timebias_alpha parameter will result in the time becoming more influential.
-        The final ranking is computed by the FTS5 rank * timebias_alpha / (days since article publication + timebias_alpha).
         '''
-        
+    
         cursor = self.db.cursor()
-        # Create a string for the MATCH operator with all keywords
-        match_string = query
+    
+        # Ensure the query string is correctly formatted for the MATCH operator
+        match_string = f"{query}"
+    
         sql = f"""
         SELECT title, text, hostname, url, publish_date, crawl_date, lang, en_translation, en_summary 
         FROM articles 
         WHERE articles MATCH ? 
-        ORDER BY bm25(articles) asc 
+        ORDER BY bm25(articles) ASC 
         LIMIT ?;
         """
+    
         cursor.execute(sql, (match_string, limit))
         rows = cursor.fetchall()
 
         # Get column names from cursor description
         columns = [column[0] for column in cursor.description]
-       # Convert rows to list of dictionaries
+    
+        # Convert rows to list of dictionaries
         output = [dict(zip(columns, row)) for row in rows]
         return output
+
 
    
     @_catch_errors
