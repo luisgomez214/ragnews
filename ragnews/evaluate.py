@@ -1,6 +1,6 @@
-#import ragnews
+import ragnews
 import json
-import rag, ArticleDB 
+#import rag, ArticleDB 
 
 class RAGEvaluator:
     def __init__(self, db_path='ragnews.db'):
