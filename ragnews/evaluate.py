@@ -1,5 +1,3 @@
-
-
 import ragnews
 import json
 from ragnews import rag, ArticleDB 
@@ -60,7 +58,7 @@ def evaluate_predictions(data, db_path='ragnews.db'):
 
         # Check for empty predictions
         if not normalized_prediction:  # If the prediction is empty
-            print(f"Empty prediction!\nMasked text: {masked_text}\nExpected: {normalized_expected}\nPredicted: {normalized_prediction}\n")
+            print(f"Could not make a prediction!\nMasked text: {masked_text}\nExpected: {normalized_expected}\nPrediction: {normalized_prediction}\n")
             continue  # Skip to the next entry
 
         # Check if all expected masks are in the predictions
@@ -71,7 +69,10 @@ def evaluate_predictions(data, db_path='ragnews.db'):
             print(f"NOT CORRECT\nMasked text: {masked_text}\nExpected: {normalized_expected}\nPredicted: {normalized_prediction}\nMissing: {missing_masks}\n")
 
     # Calculate accuracy
-    accuracy = correct / total if total > 0 else 0
+    if total > 0:
+        accuracy = correct / total 
+    else: 
+        accuracy = 0
     print(f"Accuracy: {accuracy * 100:.2f}%")
 
 
